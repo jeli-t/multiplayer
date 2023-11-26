@@ -1,5 +1,7 @@
 import pygame
 import random
+import socket
+import threading
 from config import *
 
 
@@ -42,7 +44,37 @@ def drawing(screen, player):
     pygame.display.update()
 
 
+def receive_data(client_socket):
+    while True:
+        try:
+            data = client_socket.recv(1024)
+            if not data:
+                break
+            print(f"Received from server: {data.decode('utf-8')}")
+
+        except Exception as e:
+            print(f"Error: {e}")
+            break
+
+
+def send_data(client_socket):
+    while True:
+        message = input("Enter a message: ")
+        client_socket.send(message.encode('utf-8'))
+
+
 def main():
+    # connect to server
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect(SERVER_ADDRESS)
+    receive_thread = threading.Thread(target=receive_data, args=(client_socket,))
+    send_thread = threading.Thread(target=send_data, args=(client_socket,))
+    receive_thread.start()
+    send_thread.start()
+    receive_thread.join()
+    send_thread.join()
+
+    # game logic
     run = True
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIHGT))
     clock = pygame.time.Clock()
@@ -58,6 +90,8 @@ def main():
 
         player.move()
         drawing(screen, player)
+
+    client_socket.close()
 
 
 if __name__ == "__main__":
