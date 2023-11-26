@@ -9,14 +9,14 @@ clients = []
 def handle_client(client_socket):
     while True:
         try:
-            data = client_socket.recv(1024)
-            if not data:
+            raw_data = client_socket.recv(1024)
+            if not raw_data:
                 break
 
             for c in clients:
                 if c != client_socket:
-                    c.send(data)
-                
+                    c.send(raw_data)
+
         except Exception as e:
             print(f"[!] Error {e}")
             break

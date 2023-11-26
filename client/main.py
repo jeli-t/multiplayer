@@ -2,6 +2,8 @@ import pygame
 import random
 import socket
 import threading
+import queue
+import pickle
 from config import *
 
 
@@ -38,47 +40,53 @@ class Player():
         pygame.draw.rect(screen, self.color, self.rect)
 
 
-def drawing(screen, player):
+def drawing(screen, players):
     screen.fill((0,0,0))
-    player.draw(screen)
+    for player in players:
+        player.draw(screen)
     pygame.display.update()
 
 
-def receive_data(client_socket):
+def receive_data(client_socket, message_queue):
     while True:
         try:
-            data = client_socket.recv(1024)
-            if not data:
-                break
-            print(f"Received from server: {data.decode('utf-8')}")
+            raw_data = client_socket.recv(1024)
+            if raw_data:
+                data = pickle.loads(raw_data)
+                message_queue.put(data)
 
-        except Exception as e:
-            print(f"Error: {e}")
-            break
+        except socket.error as e:   # handle non-blocking socket error
+            pass
 
 
-def send_data(client_socket):
-    while True:
-        message = input("Enter a message: ")
-        client_socket.send(message.encode('utf-8'))
+def send_data(client_socket, data):
+    serialized_data = pickle.dumps(data)
+    client_socket.send(serialized_data)
 
 
 def main():
-    # connect to server
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect(SERVER_ADDRESS)
-    receive_thread = threading.Thread(target=receive_data, args=(client_socket,))
-    send_thread = threading.Thread(target=send_data, args=(client_socket,))
-    receive_thread.start()
-    send_thread.start()
-    receive_thread.join()
-    send_thread.join()
-
-    # game logic
     run = True
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIHGT))
+    pygame.display.set_caption("Pygame Multiplayer Example")
     clock = pygame.time.Clock()
-    player = Player(0,0,(random.randint(50,255),random.randint(50,255),random.randint(50,255)))
+    players = []
+    my_player = Player(random.randint(0, WINDOW_WIDTH - PLAYER_SIZE), random.randint(0, WINDOW_HEIHGT - PLAYER_SIZE),(0,0,255))
+    players.append(my_player)
+    players.append(my_player)
+
+    # connect to server
+    try:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect(SERVER_ADDRESS)
+        client_socket.setblocking(False)
+        message_queue = queue.Queue()
+        receive_thread = threading.Thread(target=receive_data, args=(client_socket, message_queue,))
+        receive_thread.start()
+        print("[*] Connected to the server")
+    except ConnectionRefusedError:
+        print("[!] Failed to connect to the server")
+        run = False
+        pygame.quit()
 
     while run:
         clock.tick(60)
@@ -88,8 +96,16 @@ def main():
                 pygame.quit()
                 run = False
 
-        player.move()
-        drawing(screen, player)
+        my_player.move()
+        data = [my_player.x, my_player.y]
+        send_data(client_socket, data)
+
+        while not message_queue.empty():
+            position = message_queue.get()
+            opponent = Player(position[0], position[1], (255,0,0))
+            players[1] = opponent
+
+        drawing(screen, players)
 
     client_socket.close()
 
